@@ -7,7 +7,9 @@ use std::time::Duration;
 use std::{fmt, io};
 
 use mio::event::Source;
-use mio::net::{TcpListener, TcpStream, UdpSocket};
+use mio::net::{TcpListener, TcpStream};
+#[cfg(not(target_env = "sgx"))]
+use mio::net::UdpSocket;
 use mio::{event, Events, Interest, Poll, Registry, Token};
 
 mod util;
@@ -232,6 +234,7 @@ pub fn registry_ops_flow(
     registry.reregister(source, token, final_interests)
 }
 
+#[cfg(not(target_env = "sgx"))] // no UDP support in SGX.
 #[test]
 fn registry_operations_are_thread_safe() {
     let (mut poll, mut events) = init_with_poll();
@@ -318,6 +321,7 @@ fn registry_operations_are_thread_safe() {
     handle3.join().unwrap();
 }
 
+#[cfg(not(target_env = "sgx"))] // no UDP support in SGX.
 #[test]
 fn register_during_poll() {
     let (mut poll, mut events) = init_with_poll();
@@ -366,6 +370,7 @@ fn register_during_poll() {
 // - `reregister` can use the same token as `register`
 // - `reregister` can use different token from `register`
 // - multiple `reregister` are ok
+#[cfg(not(target_env = "sgx"))] // no UDP support in SGX.
 #[test]
 fn reregister_interest_token_usage() {
     let (mut poll, mut events) = init_with_poll();
@@ -419,6 +424,7 @@ pub fn double_register_different_token() {
     );
 }
 
+#[cfg(not(target_env = "sgx"))] // this test expects connect to make progress before registering
 #[test]
 fn poll_ok_after_cancelling_pending_ops() {
     let (mut poll, mut events) = init_with_poll();

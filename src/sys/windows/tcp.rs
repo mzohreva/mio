@@ -22,6 +22,8 @@ use crate::sys::windows::net::{init, new_socket, socket_addr};
 use crate::net::TcpKeepalive;
 
 pub(crate) type TcpSocket = SOCKET;
+pub(crate) type TcpListener = net::TcpListener;
+pub(crate) type TcpStream = net::TcpStream;
 
 pub(crate) fn new_v4_socket() -> io::Result<TcpSocket> {
     init();

@@ -5,6 +5,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use log::{debug, info, trace};
+#[cfg(not(target_env = "sgx"))]
 #[cfg(debug_assertions)]
 use mio::net::UdpSocket;
 use mio::net::{TcpListener, TcpStream};
@@ -193,6 +194,7 @@ fn tcp_register_multiple_event_loops() {
 }
 
 #[test]
+#[cfg(not(target_env = "sgx"))] // no UDP support in SGX.
 #[cfg(debug_assertions)] // Check is only present when debug assertions are enabled.
 fn udp_register_multiple_event_loops() {
     init();

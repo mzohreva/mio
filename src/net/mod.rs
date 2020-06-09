@@ -8,9 +8,13 @@
 //! [portability guidelines]: ../struct.Poll.html#portability
 
 mod tcp;
-pub use self::tcp::{TcpListener, TcpSocket, TcpStream, TcpKeepalive};
+pub use self::tcp::{TcpListener, TcpStream};
+#[cfg(not(target_env = "sgx"))]
+pub use self::tcp::{TcpSocket, TcpKeepalive};
 
+#[cfg(not(target_env = "sgx"))]
 mod udp;
+#[cfg(not(target_env = "sgx"))]
 pub use self::udp::UdpSocket;
 
 #[cfg(unix)]

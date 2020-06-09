@@ -22,6 +22,8 @@ use libc::TCP_KEEPALIVE as KEEPALIVE_TIME;
 )))]
 use libc::TCP_KEEPIDLE as KEEPALIVE_TIME;
 pub type TcpSocket = libc::c_int;
+pub(crate) type TcpListener = net::TcpListener;
+pub(crate) type TcpStream = net::TcpStream;
 
 pub(crate) fn new_v4_socket() -> io::Result<TcpSocket> {
     new_socket(libc::AF_INET, libc::SOCK_STREAM)
@@ -416,7 +418,7 @@ pub(crate) fn get_keepalive_retries(socket: TcpSocket) -> io::Result<Option<u32>
     Ok(Some(optval as u32))
 }
 
-pub fn accept(listener: &net::TcpListener) -> io::Result<(net::TcpStream, SocketAddr)> {
+pub fn accept(listener: &TcpListener) -> io::Result<(TcpStream, SocketAddr)> {
     let mut addr: MaybeUninit<libc::sockaddr_storage> = MaybeUninit::uninit();
     let mut length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
 
@@ -438,7 +440,7 @@ pub fn accept(listener: &net::TcpListener) -> io::Result<(net::TcpStream, Socket
             &mut length,
             libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
         ))
-        .map(|socket| unsafe { net::TcpStream::from_raw_fd(socket) })
+        .map(|socket| unsafe { TcpStream::from_raw_fd(socket) })
     }?;
 
     // But not all platforms have the `accept4(2)` call. Luckily BSD (derived)
@@ -451,7 +453,7 @@ pub fn accept(listener: &net::TcpListener) -> io::Result<(net::TcpStream, Socket
             addr.as_mut_ptr() as *mut _,
             &mut length
         ))
-        .map(|socket| unsafe { net::TcpStream::from_raw_fd(socket) })
+        .map(|socket| unsafe { TcpStream::from_raw_fd(socket) })
         .and_then(|s| syscall!(fcntl(s.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC)).map(|_| s))
     }?;
 

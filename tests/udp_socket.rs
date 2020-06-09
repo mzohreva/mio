@@ -1,4 +1,4 @@
-#![cfg(all(feature = "os-poll", feature = "net"))]
+#![cfg(all(feature = "os-poll", feature = "net", not(target_env = "sgx")))]
 
 use log::{debug, info};
 use mio::net::UdpSocket;

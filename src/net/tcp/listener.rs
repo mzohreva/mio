@@ -5,7 +5,9 @@ use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::os::windows::io::{AsRawSocket, FromRawSocket, IntoRawSocket, RawSocket};
 use std::{fmt, io};
 
-use super::{TcpSocket, TcpStream};
+#[cfg(not(target_env = "sgx"))]
+use super::TcpSocket;
+use super::TcpStream;
 use crate::io_source::IoSource;
 use crate::{event, sys, Interest, Registry, Token};
 
@@ -36,7 +38,7 @@ use crate::{event, sys, Interest, Registry, Token};
 /// # }
 /// ```
 pub struct TcpListener {
-    inner: IoSource<net::TcpListener>,
+    inner: IoSource<sys::tcp::TcpListener>,
 }
 
 impl TcpListener {
@@ -50,20 +52,37 @@ impl TcpListener {
     /// 3. Bind the socket to the specified address.
     /// 4. Calls `listen` on the socket to prepare it to receive new connections.
     pub fn bind(addr: SocketAddr) -> io::Result<TcpListener> {
-        let socket = TcpSocket::new_for_addr(addr)?;
+        #[cfg(not(target_env = "sgx"))] {
+            let socket = TcpSocket::new_for_addr(addr)?;
 
-        // On platforms with Berkeley-derived sockets, this allows to quickly
-        // rebind a socket, without needing to wait for the OS to clean up the
-        // previous one.
-        //
-        // On Windows, this allows rebinding sockets which are actively in use,
-        // which allows “socket hijacking”, so we explicitly don't set it here.
-        // https://docs.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
-        #[cfg(not(windows))]
-        socket.set_reuseaddr(true)?;
+            // On platforms with Berkeley-derived sockets, this allows to quickly
+            // rebind a socket, without needing to wait for the OS to clean up the
+            // previous one.
+            //
+            // On Windows, this allows rebinding sockets which are actively in use,
+            // which allows “socket hijacking”, so we explicitly don't set it here.
+            // https://docs.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse
+            #[cfg(not(windows))]
+            socket.set_reuseaddr(true)?;
 
-        socket.bind(addr)?;
-        socket.listen(1024)
+            socket.bind(addr)?;
+            socket.listen(1024)
+        }
+
+        #[cfg(target_env = "sgx")] {
+            Ok(TcpListener {
+                inner: IoSource::new(sys::tcp::bind(addr)?),
+            })
+        }
+    }
+
+    /// Convenience method to bind a new TCP listener to the specified address
+    /// to receive new connections.
+    #[cfg(target_env = "sgx")]
+    pub fn bind_str(addr: &str) -> io::Result<TcpListener> {
+        Ok(TcpListener {
+            inner: IoSource::new(sys::tcp::bind_str(addr)?),
+        })
     }
 
     /// Creates a new `TcpListener` from a standard `net::TcpListener`.
@@ -74,7 +93,7 @@ impl TcpListener {
     /// in non-blocking mode.
     pub fn from_std(listener: net::TcpListener) -> TcpListener {
         TcpListener {
-            inner: IoSource::new(listener),
+            inner: IoSource::new(listener.into()),
         }
     }
 
@@ -88,7 +107,7 @@ impl TcpListener {
     /// returned along with it.
     pub fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         self.inner.do_io(|inner| {
-            sys::tcp::accept(inner).map(|(stream, addr)| (TcpStream::from_std(stream), addr))
+            sys::tcp::accept(inner).map(|(stream, addr)| (TcpStream::internal_new(stream), addr))
         })
     }
 
