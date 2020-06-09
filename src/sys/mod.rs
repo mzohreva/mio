@@ -14,6 +14,7 @@
 //! * `tcp` and `udp` modules: see the [`crate::net`] module.
 //! * `Waker`: see [`crate::Waker`].
 
+#[cfg(not(target_env = "sgx"))]
 cfg_os_poll! {
     macro_rules! debug_detail {
         (
@@ -81,6 +82,12 @@ cfg_os_poll! {
 cfg_os_poll! {
     mod windows;
     pub use self::windows::*;
+}
+
+#[cfg(target_env = "sgx")]
+cfg_os_poll! {
+    mod sgx;
+    pub(crate) use self::sgx::*;
 }
 
 cfg_not_os_poll! {

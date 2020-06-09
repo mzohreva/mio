@@ -12,7 +12,7 @@ use std::time::Duration;
 
 #[macro_use]
 mod util;
-#[cfg(not(target_os = "windows"))]
+#[cfg(unix)]
 use util::init;
 use util::{
     any_local_address, any_local_ipv6_address, assert_send, assert_socket_close_on_exec,
@@ -79,6 +79,7 @@ where
     );
 
     let mut buf = [0; 16];
+    #[cfg(not(target_env = "sgx"))] // peek always returns Ok(0) in SGX.
     assert_would_block(stream.peek(&mut buf));
     assert_would_block(stream.read(&mut buf));
 
@@ -97,6 +98,7 @@ where
         vec![ExpectEvent::new(ID1, Interest::READABLE)],
     );
 
+    #[cfg(not(target_env = "sgx"))] // peek always returns Ok(0) in SGX.
     expect_read!(stream.peek(&mut buf), DATA1);
     expect_read!(stream.read(&mut buf), DATA1);
 
@@ -132,6 +134,7 @@ where
     handle.join().expect("unable to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // set_ttl is ineffective in SGX
 #[test]
 fn set_get_ttl() {
     let (mut poll, mut events) = init_with_poll();
@@ -194,6 +197,7 @@ fn get_ttl_without_previous_set() {
     thread_handle.join().expect("unable to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // set_nodelay is ineffective in SGX
 #[test]
 fn set_get_nodelay() {
     let (mut poll, mut events) = init_with_poll();
@@ -346,6 +350,7 @@ fn shutdown_write() {
     thread_handle.join().expect("unable to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // shutdown is ineffective in SGX
 #[test]
 fn shutdown_both() {
     let (mut poll, mut events) = init_with_poll();
@@ -491,6 +496,7 @@ fn no_events_after_deregister() {
 
     // Also, write should work
     let mut buf = [0; 16];
+    #[cfg(not(target_env = "sgx"))] // peek always returns Ok(0) in SGX.
     assert_would_block(stream.peek(&mut buf));
     assert_would_block(stream.read(&mut buf));
 
@@ -503,6 +509,7 @@ fn no_events_after_deregister() {
     thread_handle.join().expect("unable to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // shutdown is ineffective in SGX
 #[test]
 #[cfg_attr(
     windows,
@@ -538,6 +545,7 @@ fn tcp_shutdown_client_read_close_event() {
     handle.join().expect("failed to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // shutdown is ineffective in SGX
 #[test]
 #[cfg_attr(windows, ignore = "fails; client write_closed events are not found")]
 #[cfg_attr(
@@ -579,6 +587,7 @@ fn tcp_shutdown_client_write_close_event() {
     handle.join().expect("failed to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // shutdown is ineffective in SGX
 #[test]
 fn tcp_shutdown_server_write_close_event() {
     let (mut poll, mut events) = init_with_poll();
@@ -652,6 +661,7 @@ fn tcp_reset_close_event() {
     }
 }
 
+#[cfg(not(target_env = "sgx"))] // shutdown is ineffective in SGX
 #[test]
 #[cfg_attr(
     windows,

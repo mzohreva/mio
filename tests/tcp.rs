@@ -5,7 +5,7 @@ use mio::{Events, Interest, Poll, Token};
 #[cfg(unix)]
 use net2::TcpStreamExt;
 use std::io::{self, Read, Write};
-use std::net::{self, Shutdown};
+use std::net;
 #[cfg(unix)]
 use std::os::unix::io::{FromRawFd, IntoRawFd};
 use std::sync::mpsc::channel;
@@ -551,19 +551,24 @@ fn connect_error() {
     let mut poll = Poll::new().unwrap();
     let mut events = Events::with_capacity(16);
 
-    // Pick a "random" port that shouldn't be in use.
-    let mut listener = match TcpStream::connect("127.0.0.1:38381".parse().unwrap()) {
-        Ok(l) => l,
-        Err(ref e) if e.kind() == io::ErrorKind::ConnectionRefused => {
+    // Pick a port that shouldn't be in use.
+    // Note: Linux kernels usually use the range 32768 to 60999 for ephemeral
+    // ports which can be used by other tests running in parallel. Other
+    // operating systems use the standard IANA range of 49152 to 65535 for that
+    // purpose. Therefore choosing a port below 32768 that is not known to be
+    // registered for any widely-used service should be a good option.
+    let mut stream = match TcpStream::connect("127.0.0.1:31429".parse().unwrap()) {
+        Ok(stream) => stream,
+        Err(ref err) if err.kind() == io::ErrorKind::ConnectionRefused => {
             // Connection failed synchronously.  This is not a bug, but it
             // unfortunately doesn't get us the code coverage we want.
             return;
         }
-        Err(e) => panic!("TcpStream::connect unexpected error {:?}", e),
+        Err(err) => panic!("TcpStream::connect unexpected error {:?}", err),
     };
 
     poll.registry()
-        .register(&mut listener, Token(0), Interest::WRITABLE)
+        .register(&mut stream, Token(0), Interest::WRITABLE)
         .unwrap();
 
     'outer: loop {
@@ -577,7 +582,7 @@ fn connect_error() {
         }
     }
 
-    assert!(listener.take_error().unwrap().is_some());
+    assert!(stream.take_error().unwrap().is_some());
 
     expect_no_events(&mut poll, &mut events);
 }
@@ -631,6 +636,7 @@ fn write_error() {
     }
 }
 
+#[cfg(not(target_env = "sgx"))]
 macro_rules! wait {
     ($poll:ident, $ready:ident, $expect_read_closed: expr) => {{
         use std::time::Instant;
@@ -664,6 +670,7 @@ macro_rules! wait {
     }};
 }
 
+#[cfg(not(target_env = "sgx"))] // socket shutdown is ineffective in SGX
 #[test]
 fn write_shutdown() {
     init();
@@ -697,7 +704,7 @@ fn write_shutdown() {
 
     println!("SHUTTING DOWN");
     // Now, shutdown the write half of the socket.
-    socket.shutdown(Shutdown::Write).unwrap();
+    socket.shutdown(net::Shutdown::Write).unwrap();
 
     wait!(poll, is_readable, true);
 }
@@ -945,4 +952,60 @@ fn tcp_no_events_after_deregister() {
     expect_read!(stream.read(&mut buf), &[1, 2, 3, 4]);
 
     expect_no_events(&mut poll, &mut events);
+}
+
+#[cfg(target_env = "sgx")] // SGX-specific API
+#[test]
+fn bind_str() {
+    let mut listener = TcpListener::bind_str("localhost:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    assert!(addr.ip().is_loopback());
+
+    let handle = thread::spawn(move || {
+        net::TcpStream::connect(addr).unwrap();
+    });
+
+    let mut poll = Poll::new().unwrap();
+
+    poll.registry()
+        .register(&mut listener, Token(1), Interest::READABLE)
+        .unwrap();
+
+    let mut events = Events::with_capacity(16);
+    while events.is_empty() {
+        poll.poll(&mut events, None).unwrap();
+    }
+    assert_eq!(events.iter().count(), 1);
+    assert_eq!(events.iter().next().unwrap().token(), Token(1));
+
+    listener.accept().unwrap();
+    handle.join().unwrap();
+}
+
+#[cfg(target_env = "sgx")] // SGX-specific API
+#[test]
+fn connect_str() {
+    let listener = net::TcpListener::bind("localhost:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let handle = thread::spawn(move || {
+        listener.accept().unwrap();
+    });
+
+    let addr = format!("localhost:{}", addr.port());
+    let mut stream = TcpStream::connect_str(&addr).unwrap();
+
+    let mut poll = Poll::new().unwrap();
+
+    poll.registry()
+        .register(&mut stream, Token(1), Interest::WRITABLE)
+        .unwrap();
+
+    let mut events = Events::with_capacity(16);
+    while events.is_empty() {
+        poll.poll(&mut events, None).unwrap();
+    }
+    assert_eq!(events.iter().count(), 1);
+    assert_eq!(events.iter().next().unwrap().token(), Token(1));
+    handle.join().unwrap();
 }

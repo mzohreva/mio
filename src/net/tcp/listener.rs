@@ -35,7 +35,7 @@ use crate::{event, sys, Interest, Registry, Token};
 /// # }
 /// ```
 pub struct TcpListener {
-    inner: IoSource<net::TcpListener>,
+    inner: IoSource<sys::tcp::TcpListener>,
 }
 
 impl TcpListener {
@@ -49,7 +49,18 @@ impl TcpListener {
     /// 3. Bind the socket to the specified address.
     /// 4. Calls `listen` on the socket to prepare it to receive new connections.
     pub fn bind(addr: SocketAddr) -> io::Result<TcpListener> {
-        sys::tcp::bind(addr).map(TcpListener::from_std)
+        Ok(TcpListener {
+            inner: IoSource::new(sys::tcp::bind(addr)?),
+        })
+    }
+
+    /// Convenience method to bind a new TCP listener to the specified address
+    /// to receive new connections.
+    #[cfg(target_env = "sgx")]
+    pub fn bind_str(addr: &str) -> io::Result<TcpListener> {
+        Ok(TcpListener {
+            inner: IoSource::new(sys::tcp::bind_str(addr)?),
+        })
     }
 
     /// Creates a new `TcpListener` from a standard `net::TcpListener`.
@@ -60,7 +71,7 @@ impl TcpListener {
     /// in non-blocking mode.
     pub fn from_std(listener: net::TcpListener) -> TcpListener {
         TcpListener {
-            inner: IoSource::new(listener),
+            inner: IoSource::new(listener.into()),
         }
     }
 
@@ -74,7 +85,7 @@ impl TcpListener {
     /// returned along with it.
     pub fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         self.inner.do_io(|inner| {
-            sys::tcp::accept(inner).map(|(stream, addr)| (TcpStream::from_std(stream), addr))
+            sys::tcp::accept(inner).map(|(stream, addr)| (TcpStream::internal_new(stream), addr))
         })
     }
 

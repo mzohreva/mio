@@ -48,6 +48,18 @@ macro_rules! cfg_net {
     }
 }
 
+/// One of the `tcp` features enabled. NOTE: SGX does not support UDP yet.
+#[cfg(target_env = "sgx")]
+macro_rules! cfg_net {
+    ($($item:item)*) => {
+        $(
+            #[cfg(any(feature = "tcp"))]
+            #[cfg_attr(docsrs, doc(cfg(any(feature = "tcp"))))]
+            $item
+        )*
+    }
+}
+
 /// Feature `tcp` enabled.
 macro_rules! cfg_tcp {
     ($($item:item)*) => {
@@ -101,6 +113,18 @@ macro_rules! cfg_any_os_util {
         $(
             #[cfg(any(feature = "os-util", feature = "tcp", feature = "udp"))]
             #[cfg_attr(docsrs, doc(cfg(any(feature = "os-util", feature = "tcp", feature = "udp"))))]
+            $item
+        )*
+    }
+}
+
+/// Feature `os-util` enabled, or one of the features that need `os-util`. NOTE: SGX does not support UDP yet.
+#[cfg(target_env = "sgx")]
+macro_rules! cfg_any_os_util {
+    ($($item:item)*) => {
+        $(
+            #[cfg(any(feature = "os-util", feature = "tcp"))]
+            #[cfg_attr(docsrs, doc(cfg(any(feature = "os-util", feature = "tcp"))))]
             $item
         )*
     }

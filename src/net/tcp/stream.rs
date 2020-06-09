@@ -41,14 +41,27 @@ use crate::{event, sys, Interest, Registry, Token};
 /// # }
 /// ```
 pub struct TcpStream {
-    inner: IoSource<net::TcpStream>,
+    inner: IoSource<sys::tcp::TcpStream>,
 }
 
 impl TcpStream {
+    pub(crate) fn internal_new(stream: sys::tcp::TcpStream) -> TcpStream {
+        TcpStream {
+            inner: IoSource::new(stream),
+        }
+    }
+
     /// Create a new TCP stream and issue a non-blocking connect to the
     /// specified address.
     pub fn connect(addr: SocketAddr) -> io::Result<TcpStream> {
-        sys::tcp::connect(addr).map(TcpStream::from_std)
+        sys::tcp::connect(addr).map(TcpStream::internal_new)
+    }
+
+    /// Create a new TCP stream and issue a non-blocking connect to the
+    /// specified address.
+    #[cfg(target_env = "sgx")]
+    pub fn connect_str(addr: &str) -> io::Result<TcpStream> {
+        sys::tcp::connect_str(addr).map(TcpStream::internal_new)
     }
 
     /// Creates a new `TcpStream` from a standard `net::TcpStream`.
@@ -64,9 +77,7 @@ impl TcpStream {
     /// should already be connected via some other means (be it manually, or
     /// the standard library).
     pub fn from_std(stream: net::TcpStream) -> TcpStream {
-        TcpStream {
-            inner: IoSource::new(stream),
-        }
+        TcpStream::internal_new(stream.into())
     }
 
     /// Returns the socket address of the remote peer of this TCP connection.

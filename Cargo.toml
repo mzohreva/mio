@@ -46,10 +46,17 @@ miow   = "0.3.3"
 winapi = { version = "0.3", features = ["winsock2", "mswsock"] }
 ntapi  = "0.3"
 
+[target.x86_64-fortanix-unknown-sgx.dependencies]
+async-usercalls = { git = "https://github.com/fortanix/rust-sgx.git", branch = "mz/async-usercalls" } # FIXME: use published version once available
+lazy_static = "1.4.0"
+crossbeam-channel = "0.4"
+
 [dev-dependencies]
 env_logger = { version = "0.6.2", default-features = false }
-net2       = "0.2.33"
 rand = "0.4"
+
+[target.'cfg(unix)'.dev-dependencies]
+net2 = "0.2.33"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -65,3 +72,7 @@ required-features = ["os-poll", "tcp"]
 [[example]]
 name = "udp_server"
 required-features = ["os-poll", "udp"]
+
+# set number of threads so tests can run properly
+[package.metadata.fortanix-sgx]
+threads=100

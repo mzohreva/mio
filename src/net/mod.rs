@@ -12,6 +12,7 @@ cfg_tcp! {
     pub use self::tcp::{TcpListener, TcpStream};
 }
 
+#[cfg(not(target_env = "sgx"))]
 cfg_udp! {
     mod udp;
     pub use self::udp::UdpSocket;

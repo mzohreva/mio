@@ -90,6 +90,7 @@ where
     thread_handle.join().expect("unable to join thread");
 }
 
+#[cfg(not(target_env = "sgx"))] // set_ttl() is ineffective in SGX
 #[test]
 fn set_get_ttl() {
     init();

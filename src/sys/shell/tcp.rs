@@ -1,14 +1,16 @@
 use std::io;
-use std::net::{self, SocketAddr};
+use std::net::SocketAddr;
 
-pub fn connect(_: SocketAddr) -> io::Result<net::TcpStream> {
+pub use std::net::{TcpListener, TcpStream};
+
+pub fn connect(_: SocketAddr) -> io::Result<TcpStream> {
     os_required!();
 }
 
-pub fn bind(_: SocketAddr) -> io::Result<net::TcpListener> {
+pub fn bind(_: SocketAddr) -> io::Result<TcpListener> {
     os_required!();
 }
 
-pub fn accept(_: &net::TcpListener) -> io::Result<(net::TcpStream, SocketAddr)> {
+pub fn accept(_: &TcpListener) -> io::Result<(TcpStream, SocketAddr)> {
     os_required!();
 }

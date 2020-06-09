@@ -1,5 +1,5 @@
 use std::io;
-use std::net::{self, SocketAddr};
+use std::net::SocketAddr;
 use std::os::windows::io::FromRawSocket;
 use std::os::windows::raw::SOCKET as StdSocket; // winapi uses usize, stdlib uses u32/u64.
 
@@ -9,7 +9,9 @@ use winapi::um::winsock2::{
 
 use crate::sys::windows::net::{inaddr_any, init, new_socket, socket_addr};
 
-pub fn connect(addr: SocketAddr) -> io::Result<net::TcpStream> {
+pub use std::net::{TcpListener, TcpStream};
+
+pub fn connect(addr: SocketAddr) -> io::Result<TcpStream> {
     init();
     new_socket(addr, SOCK_STREAM)
         .and_then(|socket| {
@@ -42,10 +44,10 @@ pub fn connect(addr: SocketAddr) -> io::Result<net::TcpStream> {
                 err
             })
         })
-        .map(|socket| unsafe { net::TcpStream::from_raw_socket(socket as StdSocket) })
+        .map(|socket| unsafe { TcpStream::from_raw_socket(socket as StdSocket) })
 }
 
-pub fn bind(addr: SocketAddr) -> io::Result<net::TcpListener> {
+pub fn bind(addr: SocketAddr) -> io::Result<TcpListener> {
     init();
     new_socket(addr, SOCK_STREAM).and_then(|socket| {
         let (raw_addr, raw_addr_length) = socket_addr(&addr);
@@ -61,11 +63,11 @@ pub fn bind(addr: SocketAddr) -> io::Result<net::TcpListener> {
             let _ = unsafe { closesocket(socket) };
             err
         })
-        .map(|_| unsafe { net::TcpListener::from_raw_socket(socket as StdSocket) })
+        .map(|_| unsafe { TcpListener::from_raw_socket(socket as StdSocket) })
     })
 }
 
-pub fn accept(listener: &net::TcpListener) -> io::Result<(net::TcpStream, SocketAddr)> {
+pub fn accept(listener: &TcpListener) -> io::Result<(TcpStream, SocketAddr)> {
     // The non-blocking state of `listener` is inherited. See
     // https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-accept#remarks.
     listener.accept()
