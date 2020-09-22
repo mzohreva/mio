@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // PollOpt::oneshot() is not supported in SGX
+
 use {sleep_ms};
 use mio::*;
 use mio::net::{TcpListener, TcpStream};

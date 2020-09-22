@@ -2,6 +2,7 @@
 
 extern crate mio;
 extern crate bytes;
+#[cfg(not(target_env = "sgx"))]
 extern crate net2;
 
 #[macro_use]

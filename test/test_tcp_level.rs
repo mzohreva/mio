@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX
+
 use {expect_events, sleep_ms, TryRead};
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::event::Event;

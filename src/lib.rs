@@ -4,6 +4,7 @@
 #![allow(bare_trait_objects, deprecated, unknown_lints)]
 #![deny(missing_docs, missing_debug_implementations)]
 #![cfg_attr(test, deny(warnings))]
+#![cfg_attr(target_env = "sgx", feature(sgx_platform))]
 
 // Many of mio's public methods violate this lint, but they can't be fixed
 // without a breaking change.
@@ -108,6 +109,7 @@
 //!
 //! ```
 
+#[cfg(not(target_env = "sgx"))]
 extern crate net2;
 extern crate iovec;
 extern crate slab;
@@ -128,6 +130,14 @@ extern crate winapi;
 
 #[cfg(windows)]
 extern crate kernel32;
+
+#[cfg(target_env = "sgx")]
+extern crate async_usercalls;
+#[cfg(target_env = "sgx")]
+extern crate crossbeam_channel;
+#[cfg(target_env = "sgx")]
+// #[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 extern crate log;

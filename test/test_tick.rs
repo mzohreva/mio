@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX
+
 use mio::*;
 use mio::deprecated::{EventLoop, Handler};
 use mio::net::{TcpListener, TcpStream};

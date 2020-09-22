@@ -31,9 +31,11 @@ default = ["with-deprecated"]
 [dependencies]
 log      = "0.4"
 slab     = "0.4.0"
-net2     = "0.2.29"
 iovec    = "0.1.1"
 cfg-if   = "0.1.9"
+
+[target.'cfg(not(target_env = "sgx"))'.dependencies]
+net2 = "0.2.29"
 
 [target.'cfg(target_os = "fuchsia")'.dependencies]
 fuchsia-zircon = "0.3.2"
@@ -47,6 +49,11 @@ winapi = "0.2.6"
 miow   = "0.2.1"
 kernel32-sys = "0.2"
 
+[target.x86_64-fortanix-unknown-sgx.dependencies]
+async-usercalls = { git = "https://github.com/fortanix/rust-sgx.git", branch = "mz/async-usercalls" } # FIXME: use published version once available
+lazy_static = "1.4.0"
+crossbeam-channel = "0.4"
+
 [dev-dependencies]
 env_logger = { version = "0.4.0", default-features = false }
 tempdir    = "0.3.4"
@@ -55,3 +62,7 @@ bytes      = "0.3.0"
 [[test]]
 name = "test"
 path = "test/mod.rs"
+
+# set number of threads so tests can run properly
+[package.metadata.fortanix-sgx]
+threads=100

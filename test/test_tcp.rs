@@ -1,3 +1,4 @@
+#[cfg(not(target_env = "sgx"))]
 use std::cmp;
 use std::io::prelude::*;
 use std::io;
@@ -6,10 +7,12 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
 
+#[cfg(not(target_env = "sgx"))]
 use net2::{self, TcpStreamExt};
 
 use {TryRead, TryWrite};
 use mio::{Token, Ready, PollOpt, Poll, Events};
+#[cfg(not(target_env = "sgx"))]
 use iovec::IoVec;
 use mio::net::{TcpListener, TcpStream};
 
@@ -209,6 +212,7 @@ fn peek() {
     t.join().unwrap();
 }
 
+#[cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX
 #[test]
 fn read_bufs() {
     const N: usize = 16 * 1024 * 1024;
@@ -328,6 +332,7 @@ fn write() {
     t.join().unwrap();
 }
 
+#[cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX
 #[test]
 fn write_bufs() {
     const N: usize = 16 * 1024 * 1024;
@@ -452,6 +457,7 @@ fn bind_twice_bad() {
     assert!(TcpListener::bind(&addr).is_err());
 }
 
+#[cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX
 #[test]
 fn multiple_writes_immediate_success() {
     const N: usize = 16;
@@ -496,6 +502,7 @@ fn multiple_writes_immediate_success() {
     t.join().unwrap();
 }
 
+#[cfg(not(target_env = "sgx"))] // net2 does not compile in SGX
 #[test]
 fn connection_reset_by_peer() {
     let poll = Poll::new().unwrap();
@@ -657,4 +664,56 @@ fn write_error() {
             }
         }
     }
+}
+
+#[cfg(target_env = "sgx")] // SGX-specific API
+#[test]
+fn bind_str() {
+    let mut listener = TcpListener::bind_str("localhost:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    assert!(addr.ip().is_loopback());
+
+    let handle = thread::spawn(move || {
+        net::TcpStream::connect(addr).unwrap();
+    });
+
+    let poll = Poll::new().unwrap();
+
+    poll.register(&mut listener, Token(1), Ready::readable(), PollOpt::edge()).unwrap();
+
+    let mut events = Events::with_capacity(16);
+    while events.is_empty() {
+        poll.poll(&mut events, None).unwrap();
+    }
+    assert_eq!(events.iter().count(), 1);
+    assert_eq!(events.iter().next().unwrap().token(), Token(1));
+
+    listener.accept().unwrap();
+    handle.join().unwrap();
+}
+
+#[cfg(target_env = "sgx")] // SGX-specific API
+#[test]
+fn connect_str() {
+    let listener = net::TcpListener::bind("localhost:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let handle = thread::spawn(move || {
+        listener.accept().unwrap();
+    });
+
+    let addr = format!("localhost:{}", addr.port());
+    let mut stream = TcpStream::connect_str(&addr).unwrap();
+
+    let poll = Poll::new().unwrap();
+
+    poll.register(&mut stream, Token(1), Ready::writable(), PollOpt::edge()).unwrap();
+
+    let mut events = Events::with_capacity(16);
+    while events.is_empty() {
+        poll.poll(&mut events, None).unwrap();
+    }
+    assert_eq!(events.iter().count(), 1);
+    assert_eq!(events.iter().next().unwrap().token(), Token(1));
+    handle.join().unwrap();
 }

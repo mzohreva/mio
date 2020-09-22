@@ -9,9 +9,12 @@
 
 use std::fmt;
 use std::io::{Read, Write};
-use std::net::{self, SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr, Ipv6Addr};
+use std::net::{self, SocketAddr};
+#[cfg(not(target_env = "sgx"))]
+use std::net::{SocketAddrV4, SocketAddrV6, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 
+#[cfg(not(target_env = "sgx"))]
 use net2::TcpBuilder;
 use iovec::IoVec;
 
@@ -90,16 +93,35 @@ impl TcpStream {
     /// `TcpStream::connect_stream` to transfer ownership into mio and schedule
     /// the connect operation.
     pub fn connect(addr: &SocketAddr) -> io::Result<TcpStream> {
-        let sock = match *addr {
-            SocketAddr::V4(..) => TcpBuilder::new_v4(),
-            SocketAddr::V6(..) => TcpBuilder::new_v6(),
-        }?;
-        // Required on Windows for a future `connect_overlapped` operation to be
-        // executed successfully.
-        if cfg!(windows) {
-            sock.bind(&inaddr_any(addr))?;
+        #[cfg(not(target_env = "sgx"))] {
+            let sock = match *addr {
+                SocketAddr::V4(..) => TcpBuilder::new_v4(),
+                SocketAddr::V6(..) => TcpBuilder::new_v6(),
+            }?;
+            // Required on Windows for a future `connect_overlapped` operation to be
+            // executed successfully.
+            if cfg!(windows) {
+                sock.bind(&inaddr_any(addr))?;
+            }
+            TcpStream::connect_stream(sock.to_tcp_stream()?, addr)
         }
-        TcpStream::connect_stream(sock.to_tcp_stream()?, addr)
+
+        #[cfg(target_env = "sgx")] {
+            Ok(TcpStream {
+                sys: sys::TcpStream::connect(addr)?,
+                selector_id: SelectorId::new(),
+            })
+        }
+    }
+
+    /// Create a new TCP stream and issue a non-blocking connect to the
+    /// specified address.
+    #[cfg(target_env = "sgx")]
+    pub fn connect_str(addr: &str) -> io::Result<TcpStream> {
+        Ok(TcpStream {
+            sys: sys::TcpStream::connect_str(addr)?,
+            selector_id: SelectorId::new(),
+        })
     }
 
     /// Creates a new `TcpStream` from the pending socket inside the given
@@ -120,6 +142,7 @@ impl TcpStream {
     ///   loop. Note that on Windows you must `bind` a socket before it can be
     ///   connected, so if a custom `TcpBuilder` is used it should be bound
     ///   (perhaps to `INADDR_ANY`) before this method is called.
+    #[cfg(not(target_env = "sgx"))]
     pub fn connect_stream(stream: net::TcpStream,
                           addr: &SocketAddr) -> io::Result<TcpStream> {
         Ok(TcpStream {
@@ -391,6 +414,7 @@ impl TcpStream {
     }
 }
 
+#[cfg(not(target_env = "sgx"))]
 fn inaddr_any(other: &SocketAddr) -> SocketAddr {
     match *other {
         SocketAddr::V4(..) => {
@@ -518,24 +542,43 @@ impl TcpListener {
     /// combination with the `TcpListener::from_listener` method to transfer
     /// ownership into mio.
     pub fn bind(addr: &SocketAddr) -> io::Result<TcpListener> {
-        // Create the socket
-        let sock = match *addr {
-            SocketAddr::V4(..) => TcpBuilder::new_v4(),
-            SocketAddr::V6(..) => TcpBuilder::new_v6(),
-        }?;
+        #[cfg(not(target_env = "sgx"))] {
+            // Create the socket
+            let sock = match *addr {
+                SocketAddr::V4(..) => TcpBuilder::new_v4(),
+                SocketAddr::V6(..) => TcpBuilder::new_v6(),
+            }?;
 
-        // Set SO_REUSEADDR, but only on Unix (mirrors what libstd does)
-        if cfg!(unix) {
-            sock.reuse_address(true)?;
+            // Set SO_REUSEADDR, but only on Unix (mirrors what libstd does)
+            if cfg!(unix) {
+                sock.reuse_address(true)?;
+            }
+
+            // Bind the socket
+            sock.bind(addr)?;
+
+            // listen
+            let listener = sock.listen(1024)?;
+            Ok(TcpListener {
+                sys: sys::TcpListener::new(listener)?,
+                selector_id: SelectorId::new(),
+            })
         }
 
-        // Bind the socket
-        sock.bind(addr)?;
+        #[cfg(target_env = "sgx")] {
+            Ok(TcpListener {
+                sys: sys::TcpListener::bind(addr)?,
+                selector_id: SelectorId::new(),
+            })
+        }
+    }
 
-        // listen
-        let listener = sock.listen(1024)?;
+    /// Convenience method to bind a new TCP listener to the specified address
+    /// to receive new connections.
+    #[cfg(target_env = "sgx")]
+    pub fn bind_str(addr: &str) -> io::Result<TcpListener> {
         Ok(TcpListener {
-            sys: sys::TcpListener::new(listener)?,
+            sys: sys::TcpListener::bind_str(addr)?,
             selector_id: SelectorId::new(),
         })
     }

@@ -54,3 +54,16 @@ pub mod fuchsia;
 
 #[cfg(not(all(unix, not(target_os = "fuchsia"))))]
 pub const READY_ALL: usize = 0;
+
+#[cfg(target_env = "sgx")]
+pub use self::sgx::{
+    Awakener,
+    Events,
+    Selector,
+    TcpStream,
+    TcpListener,
+    UdpSocket,
+};
+
+#[cfg(target_env = "sgx")]
+pub mod sgx;

@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // UDP is not supported in SGX
+
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::UdpSocket;
 use bytes::{Buf, RingBuf, SliceBuf, MutBuf};

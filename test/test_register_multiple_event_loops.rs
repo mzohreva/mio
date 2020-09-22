@@ -1,6 +1,8 @@
 use localhost;
 use mio::*;
-use mio::net::{TcpListener, TcpStream, UdpSocket};
+use mio::net::{TcpListener, TcpStream};
+#[cfg(not(target_env = "sgx"))]
+use mio::net::UdpSocket;
 use std::io::ErrorKind;
 
 #[test]
@@ -40,6 +42,7 @@ fn test_tcp_register_multiple_event_loops() {
     assert_eq!(res.unwrap_err().kind(), ErrorKind::Other);
 }
 
+#[cfg(not(target_env = "sgx"))] // UDP is not supported in SGX
 #[test]
 fn test_udp_register_multiple_event_loops() {
     let addr = localhost();

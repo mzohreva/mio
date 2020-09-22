@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // Shutdown is ineffective in SGX, no TcpStreamExt::set_linger in SGX
+
 use std::collections::HashMap;
 use std::net::{self, Shutdown};
 use std::time::{Duration, Instant};

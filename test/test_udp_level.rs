@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX, UDP is not supported in SGX
+
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::event::Event;
 use mio::net::UdpSocket;

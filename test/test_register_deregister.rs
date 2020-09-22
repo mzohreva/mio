@@ -1,19 +1,26 @@
-use {expect_events, localhost, TryWrite};
+use {expect_events, localhost};
+#[cfg(not(target_env = "sgx"))]
+use TryWrite;
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::event::Event;
 use mio::net::{TcpListener, TcpStream};
+#[cfg(not(target_env = "sgx"))]
 use bytes::SliceBuf;
 use std::time::Duration;
 
+#[cfg(not(target_env = "sgx"))]
 const SERVER: Token = Token(0);
+#[cfg(not(target_env = "sgx"))]
 const CLIENT: Token = Token(1);
 
+#[cfg(not(target_env = "sgx"))]
 struct TestHandler {
     server: TcpListener,
     client: TcpStream,
     state: usize,
 }
 
+#[cfg(not(target_env = "sgx"))]
 impl TestHandler {
     fn new(srv: TcpListener, cli: TcpStream) -> TestHandler {
         TestHandler {
@@ -52,6 +59,7 @@ impl TestHandler {
     }
 }
 
+#[cfg(not(target_env = "sgx"))] // PollOpt::level() is not supported in SGX
 #[test]
 pub fn test_register_deregister() {
     let _ = ::env_logger::init();

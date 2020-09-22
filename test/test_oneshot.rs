@@ -1,3 +1,5 @@
+#![cfg(not(target_env = "sgx"))] // PollOpt::oneshot() and PollOpt::level() are not supported in SGX
+
 use mio::*;
 use mio::net::{TcpListener, TcpStream};
 use std::io::*;

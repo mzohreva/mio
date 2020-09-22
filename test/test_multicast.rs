@@ -1,6 +1,7 @@
 // TODO: This doesn't pass on android 64bit CI...
 // Figure out why!
 #![cfg(not(target_os = "android"))]
+#![cfg(not(target_env = "sgx"))] // UDP is not supported in SGX
 
 use mio::{Events, Poll, PollOpt, Ready, Token};
 use mio::net::UdpSocket;
