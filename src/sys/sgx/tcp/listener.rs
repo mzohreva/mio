@@ -1,3 +1,4 @@
+use async_usercalls::CancelHandle;
 use event::Evented;
 use poll::selector;
 use std::fmt;
@@ -6,8 +7,8 @@ use std::net::{self, SocketAddr};
 use std::os::fortanix_sgx::io::AsRawFd;
 use std::os::fortanix_sgx::usercalls::raw::Fd;
 use std::sync::{Arc, Mutex, MutexGuard};
-use sys::sgx::selector::{EventKind, Registration};
-use sys::sgx::tcp::{CancelHandleOpt, State, ASYNC};
+use sys::sgx::selector::{EventKind, Provider, Registration};
+use sys::sgx::tcp::State;
 use sys::sgx::{check_opts, other, would_block};
 use {io, Poll, PollOpt, Ready, Token};
 
@@ -24,8 +25,9 @@ struct ListenerImp(Arc<Mutex<ListenerInner>>);
 
 struct ListenerInner {
     fd: Fd,
-    accept_state: State<(), CancelHandleOpt, net::TcpStream>,
+    accept_state: State<(), Option<CancelHandle>, net::TcpStream>,
     registration: Option<Registration>,
+    provider: Option<Provider>,
 }
 
 impl TcpListener {
@@ -37,6 +39,7 @@ impl TcpListener {
                 fd,
                 accept_state: State::New(()),
                 registration: None,
+                provider: None,
             }))),
         })))
     }
@@ -110,12 +113,16 @@ impl ListenerImp {
     }
 
     fn schedule_accept(&self, inner: &mut ListenerInner) {
+        let provider = match inner.provider.as_ref() {
+            Some(provider) => provider,
+            None => return,
+        };
         match inner.accept_state {
             State::New(()) => {}
             _ => return,
         }
         let weak_ref = Arc::downgrade(&self.0);
-        let cancel_handle = ASYNC.accept_stream(inner.fd, move |res| {
+        let cancel_handle = provider.accept_stream(inner.fd, move |res| {
             let imp = match weak_ref.upgrade() {
                 Some(arc) => ListenerImp(arc),
                 None => return,
@@ -155,6 +162,7 @@ impl Evented for TcpListener {
             Some(_) => return Err(other("I/O source already registered")),
             None => inner.registration = Some(Registration::new(selector(poll), token, interest)),
         }
+        inner.provider = Some(Provider::new(selector(poll)));
         self.0.imp.schedule_accept(&mut inner);
         Ok(())
     }

@@ -135,9 +135,6 @@ extern crate kernel32;
 extern crate async_usercalls;
 #[cfg(target_env = "sgx")]
 extern crate crossbeam_channel;
-#[cfg(target_env = "sgx")]
-// #[macro_use]
-extern crate lazy_static;
 
 #[macro_use]
 extern crate log;

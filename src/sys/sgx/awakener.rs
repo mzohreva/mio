@@ -1,23 +1,36 @@
 use event::Evented;
 use poll::selector;
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use sys::sgx::selector::{EventKind, Registration};
 use sys::sgx::{check_opts, other};
 use {io, Poll, PollOpt, Ready, Token};
 
-pub struct Awakener(Mutex<Option<Registration>>);
+pub struct Awakener(Arc<Mutex<Option<Registration>>>);
 
 impl Awakener {
     pub fn new() -> io::Result<Awakener> {
-        Ok(Awakener(Mutex::new(None)))
+        Ok(Awakener(Arc::new(Mutex::new(None))))
     }
 
     pub fn wakeup(&self) -> io::Result<()> {
-        match self.0.lock().unwrap().as_ref() {
-            Some(reg) => reg.push_event(EventKind::Readable),
-            None => {} // doing nothing here seems ok.
-        }
+        let reg = self.0.lock().unwrap();
+        let provider = match reg.as_ref() {
+            Some(reg) => reg.provider(),
+            None => return Ok(()),
+        };
+        let weak_ref = Arc::downgrade(&self.0);
+        provider.insecure_time(move |_| {
+            let inner = match weak_ref.upgrade() {
+                Some(arc) => arc,
+                None => return,
+            };
+            inner
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|reg| reg.push_event(EventKind::Readable));
+        });
         Ok(())
     }
 

@@ -329,6 +329,10 @@ fn write() {
             }
         }
     }
+    #[cfg(target_env = "sgx")] // some writes may not have finished yet and to make progress we need to poll.
+    for _ in 0..3 {
+        poll.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
+    }
     t.join().unwrap();
 }
 

@@ -51,7 +51,6 @@ kernel32-sys = "0.2"
 
 [target.x86_64-fortanix-unknown-sgx.dependencies]
 async-usercalls = { git = "https://github.com/fortanix/rust-sgx.git", branch = "mz/async-usercalls" } # FIXME: use published version once available
-lazy_static = "1.4.0"
 crossbeam-channel = "0.4"
 
 [dev-dependencies]

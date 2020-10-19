@@ -1,5 +1,3 @@
-use async_usercalls::{AsyncUsercallProvider, CancelHandle};
-use lazy_static::lazy_static;
 use std::fmt;
 use std::io;
 use std::mem;
@@ -9,10 +7,6 @@ mod stream;
 
 pub use self::listener::TcpListener;
 pub use self::stream::TcpStream;
-
-lazy_static! {
-    pub static ref ASYNC: AsyncUsercallProvider = AsyncUsercallProvider::new();
-}
 
 enum State<N, P, R> {
     New(N),
@@ -94,5 +88,3 @@ impl<N, P, R> fmt::Debug for State<N, P, R> {
         }
     }
 }
-
-type CancelHandleOpt = Option<CancelHandle<'static>>;
