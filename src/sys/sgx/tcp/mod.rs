@@ -1,6 +1,9 @@
+use async_usercalls::{ReadBuffer, WriteBuffer};
 use std::fmt;
 use std::io;
 use std::mem;
+use std::ops::{Deref, DerefMut};
+use std::os::fortanix_sgx::usercalls::alloc::User;
 
 mod listener;
 mod stream;
@@ -88,3 +91,35 @@ impl<N, P, R> fmt::Debug for State<N, P, R> {
         }
     }
 }
+
+// Interim solution until we mark the target types appropriately
+pub(crate) struct MakeSend<T>(T);
+
+impl<T> MakeSend<T> {
+    pub fn new(t: T) -> Self {
+        Self(t)
+    }
+
+    #[allow(unused)]
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> Deref for MakeSend<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for MakeSend<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+unsafe impl Send for MakeSend<User<[u8]>> {}
+unsafe impl Send for MakeSend<ReadBuffer> {}
+unsafe impl Send for MakeSend<WriteBuffer> {}

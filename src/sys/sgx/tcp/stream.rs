@@ -1,4 +1,4 @@
-use async_usercalls::{alloc_buf, ReadBuffer, User, WriteBuffer, CancelHandle};
+use async_usercalls::{ReadBuffer, WriteBuffer, CancelHandle};
 use event::Evented;
 use iovec::IoVec;
 use poll::selector;
@@ -7,10 +7,11 @@ use std::io::{Read, Write};
 use std::mem;
 use std::net::{self, Shutdown, SocketAddr};
 use std::os::fortanix_sgx::io::AsRawFd;
+use std::os::fortanix_sgx::usercalls::alloc::User;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use sys::sgx::selector::{EventKind, Provider, Registration};
-use sys::sgx::tcp::State;
+use sys::sgx::tcp::{MakeSend, State};
 use sys::sgx::{check_opts, other, would_block};
 use {io, Poll, PollOpt, Ready, Token};
 
@@ -30,10 +31,10 @@ struct StreamImp(Arc<Mutex<StreamInner>>);
 
 struct StreamInner {
     connect_state: State<String, Option<CancelHandle>, net::TcpStream>,
-    write_buffer: WriteBuffer,
+    write_buffer: MakeSend<WriteBuffer>,
     write_state: State<(), Option<CancelHandle>, ()>,
-    read_buf: Option<User<[u8]>>,
-    read_state: State<(), Option<CancelHandle>, ReadBuffer>,
+    read_buf: Option<MakeSend<User<[u8]>>>,
+    read_state: State<(), Option<CancelHandle>, MakeSend<ReadBuffer>>,
     registration: Option<Registration>,
     provider: Option<Provider>,
 }
@@ -43,9 +44,9 @@ impl TcpStream {
         TcpStream(Arc::new(TcpStreamInner {
             imp: StreamImp(Arc::new(Mutex::new(StreamInner {
                 connect_state,
-                write_buffer: WriteBuffer::new(alloc_buf(WRITE_BUFFER_SIZE)),
+                write_buffer: MakeSend::new(WriteBuffer::new(User::<[u8]>::uninitialized(WRITE_BUFFER_SIZE))),
                 write_state: State::New(()),
-                read_buf: Some(alloc_buf(READ_BUFFER_SIZE)),
+                read_buf: Some(MakeSend::new(User::<[u8]>::uninitialized(READ_BUFFER_SIZE))),
                 read_state: State::New(()),
                 registration: None,
                 provider: None,
@@ -231,7 +232,7 @@ impl StreamImp {
             (true, Some(stream)) => stream.as_raw_fd(),
             _ => return,
         };
-        let read_buf = inner.read_buf.take().unwrap();
+        let read_buf = inner.read_buf.take().unwrap().into_inner();
         let weak_ref = Arc::downgrade(&self.0);
         let cancel_handle = provider.read(fd, read_buf, move |res, read_buf| {
             let imp = match weak_ref.upgrade() {
@@ -242,7 +243,7 @@ impl StreamImp {
             assert!(inner.read_state.is_pending());
             match res {
                 Ok(len) => {
-                    inner.read_state = State::Ready(ReadBuffer::new(read_buf, len));
+                    inner.read_state = State::Ready(MakeSend::new(ReadBuffer::new(read_buf, len)));
                     inner.push_event(if len == 0 {
                         EventKind::ReadClosed
                     } else {
@@ -252,7 +253,7 @@ impl StreamImp {
                 Err(e) => {
                     let is_closed = is_connection_closed(&e);
                     inner.read_state = State::Error(e);
-                    inner.read_buf = Some(read_buf);
+                    inner.read_buf = Some(MakeSend::new(read_buf));
                     inner.push_event(if is_closed {
                         EventKind::ReadClosed
                     } else {
@@ -317,7 +318,8 @@ impl StreamImp {
                 inner.read_state = State::Pending(cancel_handle);
                 return Err(would_block());
             }
-            State::Ready(mut read_buf) => {
+            State::Ready(read_buf) => {
+                let mut read_buf = read_buf.into_inner();
                 let mut r = 0;
                 for buf in bufs {
                     r += read_buf.read(buf);
@@ -326,8 +328,8 @@ impl StreamImp {
                     // Only schedule another read if the previous one returned some bytes.
                     // Otherwise assume subsequent reads will always return 0 bytes, so just
                     // stay at Ready state and always return 0 bytes from this point on.
-                    0 if read_buf.len() > 0 => inner.read_buf = Some(read_buf.into_inner()),
-                    _ => inner.read_state = State::Ready(read_buf),
+                    0 if read_buf.len() > 0 => inner.read_buf = Some(MakeSend::new(read_buf.into_inner())),
+                    _ => inner.read_state = State::Ready(MakeSend::new(read_buf)),
                 }
                 Ok(r)
             }
