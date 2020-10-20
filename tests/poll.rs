@@ -423,6 +423,7 @@ pub fn double_register_different_token() {
         .is_err());
 }
 
+#[cfg(not(target_env = "sgx"))] // this test expects connect to make progress before registering
 #[test]
 fn poll_ok_after_cancelling_pending_ops() {
     let (mut poll, mut events) = init_with_poll();

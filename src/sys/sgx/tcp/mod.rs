@@ -1,5 +1,3 @@
-use async_usercalls::{AsyncUsercallProvider, CancelHandle};
-use lazy_static::lazy_static;
 use std::fmt;
 use std::io;
 use std::mem;
@@ -29,10 +27,6 @@ pub fn bind_str(addr: &str) -> io::Result<TcpListener> {
 
 pub fn accept(listener: &TcpListener) -> io::Result<(TcpStream, SocketAddr)> {
     listener.accept()
-}
-
-lazy_static! {
-    pub static ref ASYNC: AsyncUsercallProvider = AsyncUsercallProvider::new();
 }
 
 enum State<N, P, R> {
@@ -115,8 +109,6 @@ impl<N, P, R> fmt::Debug for State<N, P, R> {
         }
     }
 }
-
-type CancelHandleOpt = Option<CancelHandle<'static>>;
 
 fn other(s: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Other, s)

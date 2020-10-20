@@ -3,20 +3,28 @@ use crate::sys::Selector;
 use crate::{Interest, Token};
 use std::fmt;
 use std::io;
+use std::sync::Arc;
 
-pub struct Waker(Registration);
+pub struct Waker(Arc<Registration>);
 
 impl Waker {
     pub fn new(selector: &Selector, token: Token) -> io::Result<Waker> {
-        Ok(Waker(Registration::new(
+        Ok(Waker(Arc::new(Registration::new(
             selector,
             token,
             Interest::READABLE,
-        )))
+        ))))
     }
 
     pub fn wake(&self) -> io::Result<()> {
-        self.0.push_event(EventKind::Readable);
+        let weak_ref = Arc::downgrade(&self.0);
+        self.0.provider().insecure_time(move |_| {
+            let inner = match weak_ref.upgrade() {
+                Some(arc) => arc,
+                None => return,
+            };
+            inner.push_event(EventKind::Readable);
+        });
         Ok(())
     }
 }

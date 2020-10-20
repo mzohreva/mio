@@ -1,4 +1,4 @@
-use async_usercalls::{alloc_buf, ReadBuffer, User, WriteBuffer};
+use async_usercalls::{alloc_buf, CancelHandle, ReadBuffer, User, WriteBuffer};
 use std::fmt;
 use std::io::{self, IoSlice, IoSliceMut, Read, Write};
 use std::mem;
@@ -6,8 +6,8 @@ use std::net::{self, Shutdown, SocketAddr};
 use std::os::fortanix_sgx::io::AsRawFd;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use super::{other, would_block, CancelHandleOpt, State, ASYNC};
-use crate::sys::sgx::selector::{EventKind, Registration};
+use super::{other, would_block, State};
+use crate::sys::sgx::selector::{EventKind, Provider, Registration};
 use crate::{event, poll, Interest, Registry, Token};
 
 const WRITE_BUFFER_SIZE: usize = 16 * 1024;
@@ -22,22 +22,18 @@ pub struct TcpStream {
 struct StreamImp(Arc<Mutex<StreamInner>>);
 
 struct StreamInner {
-    connect_state: State<String, CancelHandleOpt, net::TcpStream>,
+    connect_state: State<String, Option<CancelHandle>, net::TcpStream>,
     write_buffer: WriteBuffer,
-    write_state: State<(), CancelHandleOpt, ()>,
+    write_state: State<(), Option<CancelHandle>, ()>,
     read_buf: Option<User<[u8]>>,
-    read_state: State<(), CancelHandleOpt, ReadBuffer>,
+    read_state: State<(), Option<CancelHandle>, ReadBuffer>,
     registration: Option<Registration>,
+    provider: Option<Provider>,
 }
 
 impl TcpStream {
-    fn new(connect_state: State<String, CancelHandleOpt, net::TcpStream>) -> Self {
-        let connected = match connect_state {
-            State::New(_) => false,
-            State::Ready(_) => true,
-            State::Pending(_) | State::Error(_) => unreachable!(),
-        };
-        let stream = TcpStream {
+    fn new(connect_state: State<String, Option<CancelHandle>, net::TcpStream>) -> Self {
+        TcpStream {
             imp: StreamImp(Arc::new(Mutex::new(StreamInner {
                 connect_state,
                 write_buffer: WriteBuffer::new(alloc_buf(WRITE_BUFFER_SIZE)),
@@ -45,14 +41,9 @@ impl TcpStream {
                 read_buf: Some(alloc_buf(READ_BUFFER_SIZE)),
                 read_state: State::New(()),
                 registration: None,
+                provider: None,
             }))),
-        };
-        if connected {
-            stream.imp.post_connect(&mut stream.inner());
-        } else {
-            stream.imp.schedule_connect(&mut stream.inner());
         }
-        stream
     }
 
     pub(super) fn from_std(stream: net::TcpStream) -> (Self, SocketAddr) {
@@ -133,13 +124,25 @@ impl StreamImp {
         self.0.lock().unwrap()
     }
 
+    fn schedule_connect_or_read(&self, inner: &mut StreamInner) {
+        match inner.connect_state {
+            State::New(_) => self.schedule_connect(inner),
+            State::Ready(_) => self.post_connect(inner),
+            State::Pending(_) | State::Error(_) => {},
+        }
+    }
+
     fn schedule_connect(&self, inner: &mut StreamInner) {
+        let provider = match inner.provider.as_ref() {
+            Some(provider) => provider,
+            None => return,
+        };
         let addr = match inner.connect_state {
             State::New(ref addr) => addr.as_str(),
             _ => return,
         };
         let weak_ref = Arc::downgrade(&self.0);
-        let cancel_handle = ASYNC.connect_stream(addr, move |res| {
+        let cancel_handle = provider.connect_stream(addr, move |res| {
             let imp = match weak_ref.upgrade() {
                 Some(arc) => StreamImp(arc),
                 None => return,
@@ -163,13 +166,17 @@ impl StreamImp {
     }
 
     fn schedule_read(&self, inner: &mut StreamInner) {
+        let provider = match inner.provider.as_ref() {
+            Some(provider) => provider,
+            None => return,
+        };
         let fd = match (inner.read_state.is_new(), inner.connect_state.as_ready()) {
             (true, Some(stream)) => stream.as_raw_fd(),
             _ => return,
         };
         let read_buf = inner.read_buf.take().unwrap();
         let weak_ref = Arc::downgrade(&self.0);
-        let cancel_handle = ASYNC.read(fd, read_buf, move |res, read_buf| {
+        let cancel_handle = provider.read(fd, read_buf, move |res, read_buf| {
             let imp = match weak_ref.upgrade() {
                 Some(arc) => StreamImp(arc),
                 None => return,
@@ -201,6 +208,10 @@ impl StreamImp {
     }
 
     fn schedule_write(&self, inner: &mut StreamInner) {
+        let provider = match inner.provider.as_ref() {
+            Some(provider) => provider,
+            None => return,
+        };
         let fd = match (inner.write_state.is_new(), inner.connect_state.as_ready()) {
             (true, Some(stream)) => stream.as_raw_fd(),
             _ => return,
@@ -210,7 +221,7 @@ impl StreamImp {
             None => return,
         };
         let imp = self.clone();
-        let cancel_handle = ASYNC.write(fd, chunk, move |res, buf| {
+        let cancel_handle = provider.write(fd, chunk, move |res, buf| {
             let mut inner = imp.inner();
             match res {
                 Ok(0) => {
@@ -327,7 +338,8 @@ impl event::Source for TcpStream {
             Some(_) => return Err(other("I/O source already registered with a `Registry`")),
             None => inner.registration = Some(Registration::new(poll::selector(registry), token, interest)),
         }
-        inner.announce_current_state();
+        inner.provider = Some(Provider::new(poll::selector(registry)));
+        self.imp.schedule_connect_or_read(&mut inner);
         Ok(())
     }
 

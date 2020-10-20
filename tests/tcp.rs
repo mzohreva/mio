@@ -332,6 +332,12 @@ fn write() {
             }
         }
     }
+
+    #[cfg(target_env = "sgx")] // some writes may not have finished yet and to make progress we need to poll.
+    for _ in 0..3 {
+        poll.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
+    }
+
     handle.join().unwrap();
 }
 
@@ -454,6 +460,11 @@ fn multiple_writes_immediate_success() {
 
     for _ in 0..N {
         s.write_all(&[1; 1024]).unwrap();
+    }
+
+    #[cfg(target_env = "sgx")] // some writes may not have finished yet and to make progress we need to poll.
+    for _ in 0..3 {
+        poll.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
     }
 
     handle.join().unwrap();
@@ -947,6 +958,11 @@ fn tcp_no_events_after_deregister() {
 
     checked_write!(stream2.write(&[1, 2, 3, 4]));
     expect_no_events(&mut poll, &mut events);
+
+    #[cfg(target_env = "sgx")] // make progress by polling, but we still expect no events
+    for _ in 0..2 {
+        expect_no_events(&mut poll, &mut events);
+    }
 
     sleep(Duration::from_millis(200));
     expect_read!(stream.read(&mut buf), &[1, 2, 3, 4]);

@@ -1,7 +1,8 @@
+use async_usercalls::{AsyncUsercallProvider, CallbackHandler};
 use crossbeam_channel as mpmc;
 use std::collections::HashMap;
 use std::io;
-use std::iter;
+use std::ops::Deref;
 use std::os::fortanix_sgx::io::{AsRawFd, RawFd};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,12 +12,14 @@ pub struct Selector {
     #[cfg(debug_assertions)]
     id: usize,
     event_rx: mpmc::Receiver<(RegistrationId, EventKind)>,
+    callback_handler: Arc<CallbackHandler>,
     shared_inner: Arc<SelectorSharedInner>,
 }
 
 struct SelectorSharedInner {
     event_tx: mpmc::Sender<(RegistrationId, EventKind)>,
     registrations: Mutex<HashMap<RegistrationId, (Token, Interest)>>,
+    provider: AsyncUsercallProvider,
 }
 
 impl Selector {
@@ -24,13 +27,16 @@ impl Selector {
         #[cfg(debug_assertions)]
         static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
         let (event_tx, event_rx) = mpmc::unbounded();
+        let (provider, callback_handler) = AsyncUsercallProvider::new();
         Ok(Selector {
             #[cfg(debug_assertions)]
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             event_rx,
+            callback_handler: Arc::new(callback_handler),
             shared_inner: Arc::new(SelectorSharedInner {
                 event_tx,
                 registrations: Mutex::new(HashMap::new()),
+                provider,
             }),
         })
     }
@@ -40,22 +46,20 @@ impl Selector {
             #[cfg(debug_assertions)]
             id: self.id,
             event_rx: self.event_rx.clone(),
+            callback_handler: self.callback_handler.clone(),
             shared_inner: self.shared_inner.clone(),
         })
     }
 
-    pub fn select(&self, events: &mut Events, timeout: Option<Duration>) -> io::Result<()> {
+    pub fn select(&self, events: &mut Events, mut timeout: Option<Duration>) -> io::Result<()> {
+        if !self.event_rx.is_empty() {
+            timeout = Some(Duration::from_nanos(0));
+        }
+        self.callback_handler.poll(timeout);
+
         events.clear();
-        let first = match timeout {
-            Some(timeout) => match self.event_rx.recv_timeout(timeout) {
-                Err(mpmc::RecvTimeoutError::Timeout) => return Ok(()),
-                Err(mpmc::RecvTimeoutError::Disconnected) => panic!("event channel closed unexpectedly"),
-                Ok(v) => v,
-            },
-            None => self.event_rx.recv().expect("event channel closed unexpectedly"),
-        };
         let registrations = self.shared_inner.registrations.lock().unwrap();
-        for (reg_id, kind) in iter::once(first).chain(self.event_rx.try_iter()) {
+        for (reg_id, kind) in self.event_rx.try_iter() {
             if let Some((token, interest)) = registrations.get(&reg_id) {
                 if kind.matches_interest(interest) {
                     events.push(Event::new(kind, *token));
@@ -102,6 +106,22 @@ impl AsRawFd for Selector {
     }
 }
 
+pub(crate) struct Provider(Arc<SelectorSharedInner>);
+
+impl Provider {
+    pub fn new(selector: &Selector) -> Self {
+        Self(selector.shared_inner.clone())
+    }
+}
+
+impl Deref for Provider {
+    type Target = AsyncUsercallProvider;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0.provider
+    }
+}
+
 pub(crate) struct Registration {
     id: RegistrationId,
     shared_inner: Arc<SelectorSharedInner>,
@@ -119,6 +139,10 @@ impl Registration {
             token,
             interest: interest,
         }
+    }
+
+    pub fn provider(&self) -> Provider {
+        Provider(self.shared_inner.clone())
     }
 
     pub fn change_details(&mut self, token: Token, interest: Interest) -> bool {
