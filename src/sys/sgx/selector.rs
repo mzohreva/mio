@@ -1,4 +1,4 @@
-use async_usercalls::{AsyncUsercallProvider, CallbackHandler};
+use async_usercalls::{AsyncUsercallProvider, CallbackHandler, CallbackHandlerWaker};
 use crossbeam_channel as mpmc;
 use std::collections::HashMap;
 use std::io;
@@ -24,6 +24,7 @@ struct SelectorSharedInner {
     event_tx: mpmc::Sender<(RegistrationId, EventKind)>,
     registrations: Mutex<HashMap<RegistrationId, (Token, Interest)>>,
     provider: AsyncUsercallProvider,
+    callback_handler_waker: CallbackHandlerWaker,
 }
 
 impl Selector {
@@ -32,6 +33,7 @@ impl Selector {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
         let (event_tx, event_rx) = mpmc::unbounded();
         let (provider, callback_handler) = AsyncUsercallProvider::new();
+        let callback_handler_waker = callback_handler.waker();
         Ok(Selector {
             #[cfg(debug_assertions)]
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
@@ -41,6 +43,7 @@ impl Selector {
                 event_tx,
                 registrations: Mutex::new(HashMap::new()),
                 provider,
+                callback_handler_waker,
             }),
             #[cfg(debug_assertions)]
             has_waker: AtomicBool::new(false),
@@ -60,6 +63,7 @@ impl Selector {
     }
 
     pub fn select(&self, events: &mut Events, mut timeout: Option<Duration>) -> io::Result<()> {
+        self.shared_inner.callback_handler_waker.clear();
         if !self.event_rx.is_empty() {
             timeout = Some(Duration::from_nanos(0));
         }
@@ -175,6 +179,7 @@ impl Registration {
     pub fn push_event(&self, kind: EventKind) {
         if kind.matches_interest(&self.interest) {
             let _ = self.shared_inner.event_tx.send((self.id, kind));
+            self.shared_inner.callback_handler_waker.wake();
         }
     }
 }
